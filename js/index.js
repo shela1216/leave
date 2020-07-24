@@ -6,11 +6,18 @@
         AllowLogIn: false,
         groupId: "",
         userId: "",
+        password: "",
         game: game,
+        lineName: "",
         params: params,
         gameName: "",
+        groupName:"",
         isFirst: true,
         work: "",
+        loading: false,
+        ref: db.collection('botMember'),
+        workref:db.collection('botWork'),
+        allWork:[]
     }
     var vm = new Vue({
         el: "#main",
@@ -47,7 +54,7 @@
                 return ret;
             },
             canSubmit: function () {
-                if (this.gameName != "" && this.work != "") {
+                if (this.gameName != "" && this.work != "" && this.loading != true &&this.password!="") {
                     return true
                 } else {
                     return false
@@ -62,32 +69,39 @@
             if (this.args.groupId && this.args.userId) {
                 this.groupId = this.args.groupId;
                 this.userId = this.args.userId;
-                this.isFirst = (this.args.isFirst == '1') ? false : true;
-                if (this.isFirst == true) {
-                    this.AllowLogIn = true;
-                } else {
+                this.lineName = decodeURIComponent(escape(window.atob(this.args.UserName)));
+                this.groupName= decodeURIComponent(escape(window.atob(this.args.groupName)));
+                this.AllowLogIn = true;
+                var self = this;
+                var hadInfo =false;
 
-                    var xhr = new XMLHttpRequest();
-                    var self = this;
-                    xhr.open("GET", "https://spreadsheets.google.com/feeds/list/1K8IaCofyQGbxJD9tvzAWthDGGUyM_JwYuNhgBKbpSsA/1/public/values?alt=json");
-                    xhr.send();
-                    xhr.onreadystatechange = function () {
-                        if (xhr.readyState == 4) {
-                            if (xhr.status == 200) {
-                                var data = JSON.parse(xhr.responseText);
-                                var ListData = [];
-                                var str;
-                                for (var i = 0; i < data['feed']['entry'].length; i++) {
-                                    if (data['feed']['entry'][i]['gsx$GroupID']['$t'] == this.groupId && data['feed']['entry'][i]['gsx$userID']['$t'] == this.userId) {
-                                        this.gameName = data['feed']['entry'][i]['gsx$GameName']['$t'];
-                                        this.GameWork = data['feed']['entry'][i]['gsx$Work']['$t'];
-                                        this.AllowLogIn = true;
-                                    }
-                                }
-                            }
+                this.workref.get().then(querySnapshot => {
+                    querySnapshot.forEach(doc => {
+                        var data = doc.data();
+                        self.allWork.push(data);
+
+                    })
+                })
+                
+                this.ref.get().then(querySnapshot => {
+                    querySnapshot.forEach(doc => {
+                        var data = doc.data();
+                        var groupId = data['groupid'];
+                        var userId = data['userid'];
+                        if (groupId == self.groupId && userId == self.userId) {
+                            hadInfo=true;
+                            self.gameName = data['gameUser'];
+                            self.work = data['gameWork'];
                         }
+                    });
+
+                    if(hadInfo){
+                        self.isFirst = false;
+
+                    }else{
+                        self.isFirst = true;
                     }
-                }
+                });
 
             }
 
@@ -101,41 +115,52 @@
             submitForm: function () {
                 var today = new Date();
                 var self = this;
+                this.loading = true;
+                var ref = self.ref;
                 var currentDateTime =
 
                     today.getFullYear() + '/' +
 
                     (today.getMonth() + 1) + '月/' +
 
-                    today.getDate() + '日/' +
+                    today.getDate() + '日 ' +
 
-                    today.getHours() + ':' + today.getMinutes() +
-
-                    ')';
-
-                
-                var jsonData = {
-                    'time': currentDateTime,
-                    'groupID': this.groupId,
-                    'userID': this.userId,
-                    'name': this.gameName,
-                    'work': this.work,
-                    'game': this.game
-                };
-                $.ajax({
-                    type: "post",
-                    url: "https://script.google.com/macros/s/AKfycbyq_Pqe593G_Z2kz3U2niiUGDOqDHx6-a8vTu8nKuZMz7oWKKU/exec",
-                    data: jsonData,
-                    dataType: "JSONP",
-                    success: function (response) {
-                        alert(response);
-                        if (this.args.isFirst) {
-                            location.reload();
+                    today.getHours() + ':' + today.getMinutes();
+                if (this.isFirst) {
+                    var setDoc = ref.doc(self.userId+self.groupId);
+                    setDoc.set({
+                        gameUser: self.gameName,
+                        gameWork: self.work,
+                        groupid: self.groupId,
+                        time: currentDateTime,
+                        userName: self.lineName,
+                        userid: self.userId,
+                        password: self.password
+                    }).then(() => {
+                        alert("簽到成功");
+                        window.location.reload();
+                    });
+                } else {
+                    var setDoc = ref.doc(self.userId+self.groupId);
+                    setDoc.get().then(doc => {
+                        var data = doc.data()
+                        if (data['password'] != self.password) {
+                            alert("驗證碼錯誤無法送出")
+                            window.location.reload();
                         } else {
-                            window.location.href = window.location.href + "&isFirst=1"
+                            setDoc.update({
+                                gameUser: self.gameName,
+                                gameWork: self.work,
+                                time: currentDateTime,
+                                userName: self.lineName,
+                            }).then(() => {
+                                alert("簽到成功");
+                                window.location.reload();
+                            });
                         }
-                    }
-                  });
+                    });
+                }
+
             }
 
         }
